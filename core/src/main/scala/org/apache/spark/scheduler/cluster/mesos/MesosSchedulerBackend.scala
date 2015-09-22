@@ -128,10 +128,10 @@ private[spark] class MesosSchedulerBackend(
     val (resourcesAfterCpu, usedCpuResources) =
       partitionResources(availableResources, "cpus", mesosExecutorCores)
     val (resourcesAfterMem, usedMemResources) =
-      partitionResources(resourcesAfterCpu.asJava, "mem", calculateTotalMemory(sc))
+      partitionResources(resourcesAfterCpu, "mem", calculateTotalMemory(sc))
 
-    builder.addAllResources(usedCpuResources.asJava)
-    builder.addAllResources(usedMemResources.asJava)
+    builder.addAllResources(usedCpuResources)
+    builder.addAllResources(usedMemResources)
 
     sc.conf.getOption("spark.mesos.uris").foreach(setupUris(_, command))
 
@@ -145,7 +145,7 @@ private[spark] class MesosSchedulerBackend(
         .setupContainerBuilderDockerInfo(image, sc.conf, executorInfo.getContainerBuilder())
     }
 
-    (executorInfo.build(), resourcesAfterMem.asJava)
+    (executorInfo.build(), resourcesAfterMem)
   }
 
   /**
@@ -320,10 +320,10 @@ private[spark] class MesosSchedulerBackend(
       .setSlaveId(SlaveID.newBuilder().setValue(slaveId).build())
       .setExecutor(executorInfo)
       .setName(task.name)
-      .addAllResources(cpuResources.asJava)
+      .addAllResources(cpuResources)
       .setData(MesosTaskLaunchData(task.serializedTask, task.attemptNumber).toByteString)
       .build()
-    (taskInfo, finalResources.asJava)
+    (taskInfo, finalResources)
   }
 
   override def statusUpdate(d: SchedulerDriver, status: TaskStatus) {
