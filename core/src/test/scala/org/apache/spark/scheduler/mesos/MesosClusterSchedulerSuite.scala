@@ -17,10 +17,16 @@
 
 package org.apache.spark.scheduler.mesos
 
-import java.util.Date
+import java.util.{Collection, Collections, Date}
 
+import scala.collection.JavaConverters._
+
+import org.apache.mesos.Protos.Value.{Scalar, Type}
+import org.apache.mesos.Protos._
+import org.apache.mesos.SchedulerDriver
+import org.mockito.Mockito._
+import org.mockito.{ArgumentCaptor, Matchers}
 import org.scalatest.mock.MockitoSugar
-
 import org.apache.spark.deploy.Command
 import org.apache.spark.deploy.mesos.MesosDriverDescription
 import org.apache.spark.scheduler.cluster.mesos._
@@ -29,7 +35,7 @@ import org.apache.spark.{LocalSparkContext, SparkConf, SparkFunSuite}
 
 class MesosClusterSchedulerSuite extends SparkFunSuite with LocalSparkContext with MockitoSugar {
 
-  private val command = new Command("mainClass", Seq("arg"), null, null, null, null)
+  private val command = new Command("mainClass", Seq("arg"), Map(), Seq(), Seq(), Seq())
 
   test("can queue drivers") {
     val conf = new SparkConf()
@@ -71,5 +77,57 @@ class MesosClusterSchedulerSuite extends SparkFunSuite with LocalSparkContext wi
     assert(killResponse.success)
     val state = scheduler.getSchedulerState()
     assert(state.queuedDrivers.isEmpty)
+  }
+
+  test("can handle multiple roles") {
+    val conf = new SparkConf()
+    conf.setMaster("mesos://localhost:5050")
+    conf.setAppName("spark mesos")
+    val scheduler = new MesosClusterScheduler(
+      new BlackHoleMesosClusterPersistenceEngineFactory, conf) {
+      override def start(): Unit = { ready = true }
+    }
+    scheduler.start()
+    val driver = mock[SchedulerDriver]
+    val response = scheduler.submitDriver(
+      new MesosDriverDescription("d1", "jar", 1500, 1, true,
+        command,
+        Map(("spark.mesos.executor.home", "test"), ("spark.app.name", "test")),
+        "s1",
+        new Date()))
+    assert(response.success)
+    val offer = Offer.newBuilder()
+      .addResources(
+        Resource.newBuilder().setRole("*")
+          .setScalar(Scalar.newBuilder().setValue(1).build()).setName("cpus").setType(Type.SCALAR))
+      .addResources(
+        Resource.newBuilder().setRole("*")
+          .setScalar(Scalar.newBuilder().setValue(1000).build()).setName("mem").setType(Type.SCALAR))
+      .addResources(
+        Resource.newBuilder().setRole("role2")
+          .setScalar(Scalar.newBuilder().setValue(1).build()).setName("cpus").setType(Type.SCALAR))
+      .addResources(
+        Resource.newBuilder().setRole("role2")
+          .setScalar(Scalar.newBuilder().setValue(500).build()).setName("mem").setType(Type.SCALAR))
+      .setId(OfferID.newBuilder().setValue("o1").build())
+      .setFrameworkId(FrameworkID.newBuilder().setValue("f1").build())
+      .setSlaveId(SlaveID.newBuilder().setValue("s1").build())
+      .setHostname("host1")
+      .build()
+
+    val capture = ArgumentCaptor.forClass(classOf[Collection[TaskInfo]])
+
+    when(
+      driver.launchTasks(
+        Matchers.eq(Collections.singleton(offer.getId)),
+        capture.capture())
+    ).thenReturn(Status.valueOf(1))
+
+    scheduler.resourceOffers(driver, List(offer).asJava)
+
+    verify(driver, times(1)).launchTasks(
+      Matchers.eq(Collections.singleton(offer.getId)),
+      capture.capture()
+    )
   }
 }

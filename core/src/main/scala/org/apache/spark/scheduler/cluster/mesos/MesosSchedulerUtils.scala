@@ -189,7 +189,7 @@ private[mesos] trait MesosSchedulerUtils extends Logging {
     val filteredResources =
       remainingResources.filter(r => r.getType != Value.Type.SCALAR || r.getScalar.getValue > 0.0)
 
-    (filteredResources.toList.asJava, requestedResources.toList.asJava)
+    (filteredResources.asJava, requestedResources.asJava)
   }
 
   /** Helper method to get the key,value-set pair for a Mesos Attribute protobuf */

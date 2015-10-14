@@ -358,9 +358,10 @@ private[spark] class MesosClusterScheduler(
     val appJar = CommandInfo.URI.newBuilder()
       .setValue(desc.jarUrl.stripPrefix("file:").stripPrefix("local:")).build()
     val builder = CommandInfo.newBuilder().addUris(appJar)
-    val entries =
-      (conf.getOption("spark.executor.extraLibraryPath").toList ++
-        desc.command.libraryPathEntries)
+    val entries = conf.getOption("spark.executor.extraLibraryPath")
+      .map(path => Seq(path) ++ desc.command.libraryPathEntries)
+      .getOrElse(desc.command.libraryPathEntries)
+
     val prefixEnv = if (!entries.isEmpty) {
       Utils.libraryPathEnvPrefix(entries)
     } else {
@@ -549,7 +550,10 @@ private[spark] class MesosClusterScheduler(
     tasks.foreach { case (offerId, taskInfos) =>
       driver.launchTasks(Collections.singleton(offerId), taskInfos.asJava)
     }
-    currentOffers.asScala.filter(!_.used).foreach(o => driver.declineOffer(o.offerId))
+
+    for (o <- currentOffers.asScala if !o.used) {
+      driver.declineOffer(o.offerId)
+    }
   }
 
   private def copyBuffer(
